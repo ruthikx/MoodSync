@@ -1,7 +1,21 @@
 const jwt = require("jsonwebtoken");
 
+function readToken(req) {
+    const authHeader = req.headers.authorization || "";
+
+    if (req.cookies?.token) {
+        return req.cookies.token;
+    }
+
+    if (authHeader.startsWith("Bearer ")) {
+        return authHeader.slice(7);
+    }
+
+    return null;
+}
+
 async function authArtist(req,res, next) {
-    const token = req.cookies.token;
+    const token = readToken(req);
 
     if(!token){
         return res.status(401).json({
@@ -27,10 +41,10 @@ async function authArtist(req,res, next) {
 }
 
 async function authUser(req,res,next) {
-    const token = req.cookies.token;
+    const token = readToken(req);
 
     if(!token){
-        res.status(401).json({
+        return res.status(401).json({
             message: "Unauthorized"
         })
     }
@@ -38,7 +52,7 @@ async function authUser(req,res,next) {
     try{
         const decoded = jwt.verify(token, process.env.JWT_SECRET)
 
-        if(decoded.role !== "user"){
+        if(!["user", "artist"].includes(decoded.role)){
             return res.status(403).json({
                 message:"You dont have access"
             })
@@ -50,6 +64,9 @@ async function authUser(req,res,next) {
 
     }catch(err){
         console.log(err)
+        return res.status(401).json({
+            message: "Unauthorized"
+        })
     }
 
 }

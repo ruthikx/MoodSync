@@ -1,19 +1,47 @@
 const musicModel = require("../models/music.model");
 const albumModel = require("../models/album.model");
 const {uploadFile} = require("../services/storage.service");
-const jwt= require("jsonwebtoken");
+
+function normalizeMusicIds(input) {
+    if (Array.isArray(input)) {
+        return input.filter(Boolean);
+    }
+
+    if (typeof input === "string") {
+        return input
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean);
+    }
+
+    return [];
+}
 
 async function createMusic(req,res) {
     const {title} = req.body;
     const file = req.file;
 
+    if (!title?.trim()) {
+        return res.status(400).json({
+            message: "Title is required"
+        })
+    }
+
+    if (!file) {
+        return res.status(400).json({
+            message: "Music file is required"
+        })
+    }
+
     const result = await uploadFile(file.buffer.toString('base64'))
 
     const music= await musicModel.create({
         uri: result.url,
-        title,
+        title: title.trim(),
         artist: req.user.id,
     })
+
+    await music.populate("artist", "username email")
 
     res.status(201).json({
         message:"Music created successfully",
@@ -29,12 +57,39 @@ async function createMusic(req,res) {
 async function createAlbum(req,res){
 
     const {title, musics} = req.body;
+    const musicIds = normalizeMusicIds(musics);
+
+    if (!title?.trim()) {
+        return res.status(400).json({
+            message: "Album title is required"
+        })
+    }
+
+    if (!musicIds.length) {
+        return res.status(400).json({
+            message: "Select at least one music track"
+        })
+    }
+
+    const ownedMusics = await musicModel.find({
+        _id: { $in: musicIds },
+        artist: req.user.id,
+    }).select("_id");
+
+    if (ownedMusics.length !== musicIds.length) {
+        return res.status(400).json({
+            message: "Album can only include your own music"
+        })
+    }
 
     const album = await albumModel.create({
-        title,
+        title: title.trim(),
         artist: req.user.id,
-        musics: musics,
+        musics: musicIds,
     })
+
+    await album.populate("artist", "username email")
+    await album.populate("musics")
 
     res.status(201).json({
         message: "Album created successfully",
@@ -63,7 +118,7 @@ async function getAllAlbums(req, res){
     const albums= await albumModel
     .find()
     .limit(20)
-    .select("title artist").populate("artist","username email")
+    .select("title artist musics").populate("artist","username email")
 
     res.status(200).json({
         message: "Albums getched successfully",
